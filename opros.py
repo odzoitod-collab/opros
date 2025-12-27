@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import sys
-import json
+import os
 import random
 import aiosqlite
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -13,23 +14,39 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # --- CONFIGURATION ---
-BOT_TOKEN = "7236713833:AAGCM0zPW6lsHX_SF6kmOUGrakIZNAFu9mw"
-ADMIN_ID = 844012884  # Твой Telegram ID
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "7236713833:AAGCM0zPW6lsHX_SF6kmOUGrakIZNAFu9mw"
+ADMIN_ID = int(os.getenv("ADMIN_ID") or "844012884")
 
 db_name = "new_year_party.db"
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # --- ШУТКИ ---
 JOKES = [
-    "Рожнов лох ",
-    "Серьога порєшает",
-    "А лизка захарченко сосала товсто..."
+    "Рожнов лох 😂",
+    "Серьога порєшає! 💪",
+    "Хто не скине — той Рожнов 🤡",
+    "Новий рік буде вогонь, якщо Серьога не проспить 😴",
+    "Олів'є без ковбаси — як Рожнов без зашквару 🥗",
+    "Серьога каже: 'Я принесу!' — ніхто не вірить 😏",
+    "Рожнов обіцяв шампанське... чекаємо з 2019 🍾",
+    "Головне — не бути як Рожнов на минулий НР 🙈",
+    "Серьога — легенда, Рожнов — мем 🏆",
+    "Якщо щось піде не так — виною Рожнов 🎯",
+    "Рожнов вже гуглить 'як не облажатись на НР' 🔍",
+    "Серьога: 'Я організую!' Всі: 'О ні...' 😅"
 ]
 
 def random_joke() -> str:
-    return random.choice(JOKES) if random.random() > 0.6 else ""
+    return random.choice(JOKES) if random.random() > 0.5 else ""
+
+def joke_text(base: str) -> str:
+    joke = random_joke()
+    return f"{base}\n\n{joke}" if joke else base
 
 # --- DATABASE ---
 async def init_db():
@@ -37,154 +54,114 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS surveys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
+                user_id INTEGER UNIQUE,
                 telegram_username TEXT,
                 display_name TEXT,
-                guests_count INTEGER,
-                drink_type TEXT,
-                alcohol_details TEXT,
-                soft_drinks TEXT,
-                main_dish TEXT,
-                main_dish_details TEXT,
-                salad_1 TEXT,
-                salad_2 TEXT,
-                appetizers TEXT,
-                sausage_types INTEGER,
-                sausage_preferences TEXT,
-                cheese_types INTEGER,
-                cheese_preferences TEXT,
-                bread_type TEXT,
-                fruits TEXT,
+                people_count TEXT,
+                drinks TEXT,
+                food TEXT,
+                snacks_and_cuts TEXT,
                 dessert TEXT,
-                dessert_details TEXT,
-                budget_per_person INTEGER,
-                total_budget INTEGER,
-                party_start_time TEXT,
-                party_location TEXT,
-                music_preferences TEXT,
+                budget TEXT,
+                time_and_place TEXT,
                 activities TEXT,
-                dietary_restrictions TEXT,
-                allergies TEXT,
-                special_wishes TEXT,
-                what_will_bring TEXT,
-                completed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                restrictions TEXT,
+                contribution TEXT,
+                extra_wishes TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
         """)
         await db.commit()
+    logger.info("Database initialized")
 
 async def save_survey(data: dict):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     async with aiosqlite.connect(db_name) as db:
-        await db.execute("""
-            INSERT INTO surveys (
-                user_id, telegram_username, display_name, guests_count,
-                drink_type, alcohol_details, soft_drinks,
-                main_dish, main_dish_details, salad_1, salad_2,
-                appetizers, sausage_types, sausage_preferences,
-                cheese_types, cheese_preferences, bread_type, fruits,
-                dessert, dessert_details, budget_per_person, total_budget,
-                party_start_time, party_location, music_preferences, activities,
-                dietary_restrictions, allergies, special_wishes, what_will_bring
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data.get('user_id'), data.get('telegram_username'), data.get('display_name'), data.get('guests_count'),
-            data.get('drink_type'), data.get('alcohol_details'), data.get('soft_drinks'),
-            data.get('main_dish'), data.get('main_dish_details'), data.get('salad_1'), data.get('salad_2'),
-            data.get('appetizers'), data.get('sausage_types'), data.get('sausage_preferences'),
-            data.get('cheese_types'), data.get('cheese_preferences'), data.get('bread_type'), data.get('fruits'),
-            data.get('dessert'), data.get('dessert_details'), data.get('budget_per_person'), data.get('total_budget'),
-            data.get('party_start_time'), data.get('party_location'), data.get('music_preferences'), data.get('activities'),
-            data.get('dietary_restrictions'), data.get('allergies'), data.get('special_wishes'), data.get('what_will_bring')
-        ))
+        cursor = await db.execute("SELECT id FROM surveys WHERE user_id = ?", (data['user_id'],))
+        exists = await cursor.fetchone()
+        
+        if exists:
+            await db.execute("""
+                UPDATE surveys SET
+                    telegram_username = ?, display_name = ?, people_count = ?,
+                    drinks = ?, food = ?, snacks_and_cuts = ?, dessert = ?,
+                    budget = ?, time_and_place = ?, activities = ?,
+                    restrictions = ?, contribution = ?, extra_wishes = ?, updated_at = ?
+                WHERE user_id = ?
+            """, (
+                data.get('telegram_username'), data.get('display_name'), data.get('people_count'),
+                data.get('drinks'), data.get('food'), data.get('snacks_and_cuts'), data.get('dessert'),
+                data.get('budget'), data.get('time_and_place'), data.get('activities'),
+                data.get('restrictions'), data.get('contribution'), data.get('extra_wishes'), now,
+                data['user_id']
+            ))
+        else:
+            await db.execute("""
+                INSERT INTO surveys (
+                    user_id, telegram_username, display_name, people_count,
+                    drinks, food, snacks_and_cuts, dessert, budget,
+                    time_and_place, activities, restrictions, contribution, extra_wishes,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data['user_id'], data.get('telegram_username'), data.get('display_name'), data.get('people_count'),
+                data.get('drinks'), data.get('food'), data.get('snacks_and_cuts'), data.get('dessert'),
+                data.get('budget'), data.get('time_and_place'), data.get('activities'),
+                data.get('restrictions'), data.get('contribution'), data.get('extra_wishes'),
+                now, now
+            ))
         await db.commit()
+    logger.info(f"Survey saved for user {data['user_id']}")
 
 async def get_all_surveys():
     async with aiosqlite.connect(db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM surveys ORDER BY completed_at DESC")
+        cursor = await db.execute("SELECT * FROM surveys ORDER BY updated_at DESC")
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-async def get_participants_count():
+async def get_survey_count():
     async with aiosqlite.connect(db_name) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM surveys")
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+async def delete_survey(user_id: int):
+    async with aiosqlite.connect(db_name) as db:
+        await db.execute("DELETE FROM surveys WHERE user_id = ?", (user_id,))
+        await db.commit()
+
 # --- FSM STATES ---
 class Survey(StatesGroup):
     name = State()
-    guests_count = State()
-    drink_type = State()
-    alcohol_details = State()
-    soft_drinks = State()
-    main_dish = State()
-    main_dish_details = State()
-    salad_1 = State()
-    salad_2 = State()
-    appetizers = State()
-    sausage_types = State()
-    sausage_preferences = State()
-    cheese_types = State()
-    cheese_preferences = State()
-    bread_type = State()
-    fruits = State()
+    people = State()
+    drinks = State()
+    food = State()
+    snacks = State()
     dessert = State()
-    dessert_details = State()
     budget = State()
-    party_time = State()
-    location = State()
-    music = State()
+    time_place = State()
     activities = State()
-    dietary = State()
-    allergies = State()
-    special_wishes = State()
-    what_bring = State()
+    restrictions = State()
+    contribution = State()
+    extra = State()
 
 # --- KEYBOARDS ---
-def get_admin_kb():
+def admin_kb():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📊 Статистика")]],
         resize_keyboard=True
     )
 
-def get_drink_type_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🍷 Алкоголь"), KeyboardButton(text="🧃 Безалкогольне")],
-            [KeyboardButton(text="🍹 І те, і те")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-
-def get_yes_no_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="✅ Так"), KeyboardButton(text="❌ Ні")]],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-
-def get_time_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="18:00"), KeyboardButton(text="19:00"), KeyboardButton(text="20:00")],
-            [KeyboardButton(text="21:00"), KeyboardButton(text="22:00"), KeyboardButton(text="Ближче до півночі")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-
-def get_skip_kb():
+def skip_kb():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="⏭ Пропустити")]],
         resize_keyboard=True, one_time_keyboard=True
     )
 
-def get_location_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🏠 Вдома"), KeyboardButton(text="🏢 В гостях")],
-            [KeyboardButton(text="🍽 Ресторан/кафе"), KeyboardButton(text="🤷 Ще не вирішили")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True
-    )
+def remove_kb():
+    return ReplyKeyboardRemove()
 
 # --- HANDLERS ---
 router = Router()
@@ -192,248 +169,191 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    
-    joke = random_joke()
-    text = f"🎄 Йоу! Плануємо Новий Рік!\n\n{joke}\n\nЯк тебе називати?" if joke else "🎄 Йоу! Плануємо Новий Рік!\n\nЯк тебе називати?"
-    
-    kb = get_admin_kb() if message.from_user.id == ADMIN_ID else ReplyKeyboardRemove()
-    await message.answer(text, reply_markup=ReplyKeyboardRemove())
+    logger.info(f"User {message.from_user.id} started bot")
+    text = joke_text("🎄 Йоу! Плануємо Новий Рік разом!\n\nОпитування займе 2-3 хвилини.\nВідповідай розгорнуто — так буде легше все спланувати.\n\n👤 Як тебе називати?")
+    await message.answer(text, reply_markup=remove_kb())
     await state.set_state(Survey.name)
 
 @router.message(Survey.name)
 async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
     if len(name) < 2:
-        await message.answer("Ім'я закоротке, давай нормальне 😅")
+        await message.answer("Занадто коротко, напиши нормальне ім'я 😅")
         return
     
     await state.update_data(
         display_name=name,
         user_id=message.from_user.id,
-        telegram_username=message.from_user.username or "немає"
+        telegram_username=message.from_user.username or "без юзернейму"
     )
     
-    joke = random_joke()
-    text = f"Привіт, {name}! 🎉\n\n{joke}\n\n1️⃣ Скільки людей буде з тобою? (тільки число)" if joke else f"Привіт, {name}! 🎉\n\n1️⃣ Скільки людей буде з тобою? (тільки число)"
-    await message.answer(text, reply_markup=ReplyKeyboardRemove())
-    await state.set_state(Survey.guests_count)
+    text = joke_text(f"Привіт, {name}! 🎉\n\n1️⃣ Скільки вас буде? Ти + скільки гостей?\n\n(Наприклад: 'Я сам', 'Я + дівчина', 'Нас буде 4')")
+    await message.answer(text)
+    await state.set_state(Survey.people)
 
-@router.message(Survey.guests_count)
-async def process_guests(message: Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Напиши число, не будь як Рожнов 🙄")
-        return
-    await state.update_data(guests_count=int(message.text))
-    await message.answer("2️⃣ Які напої вживаєш?", reply_markup=get_drink_type_kb())
-    await state.set_state(Survey.drink_type)
-
-@router.message(Survey.drink_type)
-async def process_drink_type(message: Message, state: FSMContext):
-    drink_map = {"🍷 Алкоголь": "алкоголь", "🧃 Безалкогольне": "безалкогольне", "🍹 І те, і те": "все"}
-    drink_type = drink_map.get(message.text, message.text.lower())
-    await state.update_data(drink_type=drink_type)
+@router.message(Survey.people)
+async def process_people(message: Message, state: FSMContext):
+    await state.update_data(people_count=message.text)
     
-    if drink_type in ["алкоголь", "все"]:
-        await message.answer(
-            "3️⃣ Який алкоголь любиш?\n(Шампанське, вино, горілка, коньяк, пиво...)",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await state.set_state(Survey.alcohol_details)
-    else:
-        await state.update_data(alcohol_details="не п'є")
-        await message.answer(
-            "3️⃣ Які безалкогольні напої?\n(Сік, кола, вода, морс...)",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await state.set_state(Survey.soft_drinks)
+    text = joke_text("""2️⃣ НАПОЇ 🍾
 
-@router.message(Survey.alcohol_details)
-async def process_alcohol(message: Message, state: FSMContext):
-    await state.update_data(alcohol_details=message.text)
-    await message.answer("4️⃣ А безалкогольне що? (сік, вода, кола...)")
-    await state.set_state(Survey.soft_drinks)
+Розкажи все про напої:
+• Алкоголь чи без? Що саме?
+• Шампанське, вино, горілка, коньяк, пиво?
+• Соки, кола, вода, морс?
+• Скільки приблизно потрібно?
 
-@router.message(Survey.soft_drinks)
-async def process_soft(message: Message, state: FSMContext):
-    await state.update_data(soft_drinks=message.text)
-    joke = random_joke()
-    text = f"5️⃣ Яке гаряче хочеш на столі?\n(Курка, качка, м'ясо, риба...)\n\n{joke}" if joke else "5️⃣ Яке гаряче хочеш на столі?\n(Курка, качка, м'ясо, риба...)"
+(Пиши все в одному повідомленні)""")
     await message.answer(text)
-    await state.set_state(Survey.main_dish)
+    await state.set_state(Survey.drinks)
 
-@router.message(Survey.main_dish)
-async def process_main(message: Message, state: FSMContext):
-    await state.update_data(main_dish=message.text)
-    await message.answer("6️⃣ Як саме приготувати? (запечене, смажене, в духовці, на грилі...)")
-    await state.set_state(Survey.main_dish_details)
+@router.message(Survey.drinks)
+async def process_drinks(message: Message, state: FSMContext):
+    await state.update_data(drinks=message.text)
+    
+    text = joke_text("""3️⃣ ОСНОВНА ЇЖА 🍖
 
-@router.message(Survey.main_dish_details)
-async def process_main_details(message: Message, state: FSMContext):
-    await state.update_data(main_dish_details=message.text)
-    await message.answer("7️⃣ Перший салат? (Олів'є, Шуба, Цезар, Крабовий...)")
-    await state.set_state(Survey.salad_1)
+Розкажи про гаряче та салати:
+• Яке гаряче? (курка, качка, м'ясо, риба)
+• Як готувати? (запечене, смажене, на грилі)
+• Які салати? (Олів'є, Шуба, Цезар, інші)
+• Скільки видів салатів потрібно?
 
-@router.message(Survey.salad_1)
-async def process_salad1(message: Message, state: FSMContext):
-    await state.update_data(salad_1=message.text)
-    await message.answer("8️⃣ Другий салат? (або напиши 'достатньо')")
-    await state.set_state(Survey.salad_2)
-
-@router.message(Survey.salad_2)
-async def process_salad2(message: Message, state: FSMContext):
-    await state.update_data(salad_2=message.text)
-    joke = random_joke()
-    text = f"9️⃣ Які закуски?\n(Канапки, тарталетки, бутерброди з ікрою, соління...)\n\n{joke}" if joke else "9️⃣ Які закуски?\n(Канапки, тарталетки, бутерброди з ікрою, соління...)"
+(Все в одному повідомленні)""")
     await message.answer(text)
-    await state.set_state(Survey.appetizers)
+    await state.set_state(Survey.food)
 
-@router.message(Survey.appetizers)
-async def process_appetizers(message: Message, state: FSMContext):
-    await state.update_data(appetizers=message.text)
-    await message.answer("🔟 Скільки ВИДІВ ковбаси в нарізку? (число)")
-    await state.set_state(Survey.sausage_types)
+@router.message(Survey.food)
+async def process_food(message: Message, state: FSMContext):
+    await state.update_data(food=message.text)
+    
+    text = joke_text("""4️⃣ ЗАКУСКИ ТА НАРІЗКИ 🧀
 
-@router.message(Survey.sausage_types)
-async def process_sausage_count(message: Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Число давай! Серьога порєшає, а ти число напиши 😤")
-        return
-    await state.update_data(sausage_types=int(message.text))
-    await message.answer("1️⃣1️⃣ Яку ковбасу любиш? (салямі, сервелат, балик...)")
-    await state.set_state(Survey.sausage_preferences)
+Розкажи про:
+• Ковбасна нарізка — скільки видів? Які? (салямі, балик, сервелат)
+• Сирна нарізка — скільки видів? Які? (Гауда, Маасдам, Бри)
+• Інші закуски? (канапки, тарталетки, соління, оливки, ікра)
+• Хліб? (білий, чорний, багет)
+• Фрукти? (мандарини, виноград, яблука)""")
+    await message.answer(text)
+    await state.set_state(Survey.snacks)
 
-@router.message(Survey.sausage_preferences)
-async def process_sausage_pref(message: Message, state: FSMContext):
-    await state.update_data(sausage_preferences=message.text)
-    await message.answer("1️⃣2️⃣ Скільки ВИДІВ сиру? (число)")
-    await state.set_state(Survey.cheese_types)
+@router.message(Survey.snacks)
+async def process_snacks(message: Message, state: FSMContext):
+    await state.update_data(snacks_and_cuts=message.text)
+    
+    text = joke_text("""5️⃣ ДЕСЕРТ 🍰
 
-@router.message(Survey.cheese_types)
-async def process_cheese_count(message: Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Рожнов теж не вмів рахувати... Число!")
-        return
-    await state.update_data(cheese_types=int(message.text))
-    await message.answer("1️⃣3️⃣ Який сир? (Гауда, Маасдам, Бри, Дор Блю...)")
-    await state.set_state(Survey.cheese_preferences)
-
-@router.message(Survey.cheese_preferences)
-async def process_cheese_pref(message: Message, state: FSMContext):
-    await state.update_data(cheese_preferences=message.text)
-    await message.answer("1️⃣4️⃣ Який хліб? (білий, чорний, багет, без хліба...)")
-    await state.set_state(Survey.bread_type)
-
-@router.message(Survey.bread_type)
-async def process_bread(message: Message, state: FSMContext):
-    await state.update_data(bread_type=message.text)
-    await message.answer("1️⃣5️⃣ Які фрукти на стіл? (мандарини, виноград, яблука...)")
-    await state.set_state(Survey.fruits)
-
-@router.message(Survey.fruits)
-async def process_fruits(message: Message, state: FSMContext):
-    await state.update_data(fruits=message.text)
-    joke = random_joke()
-    text = f"1️⃣6️⃣ Який десерт?\n(Торт, тістечка, цукерки, морозиво...)\n\n{joke}" if joke else "1️⃣6️⃣ Який десерт?\n(Торт, тістечка, цукерки, морозиво...)"
+Що на солодке?
+• Торт? Який саме?
+• Тістечка, цукерки?
+• Морозиво?
+• Щось інше?""")
     await message.answer(text)
     await state.set_state(Survey.dessert)
 
 @router.message(Survey.dessert)
 async def process_dessert(message: Message, state: FSMContext):
     await state.update_data(dessert=message.text)
-    await message.answer("1️⃣7️⃣ Уточни десерт (який торт? які цукерки?)")
-    await state.set_state(Survey.dessert_details)
+    
+    text = """6️⃣ БЮДЖЕТ 💰
 
-@router.message(Survey.dessert_details)
-async def process_dessert_details(message: Message, state: FSMContext):
-    await state.update_data(dessert_details=message.text)
-    await message.answer("1️⃣8️⃣ Твій бюджет НА ЛЮДИНУ в гривнях? (тільки число)")
+Скільки готовий скинути на спільний стіл?
+(Напиши суму в гривнях, наприклад: 500, 1000, 1500)"""
+    await message.answer(text)
     await state.set_state(Survey.budget)
 
 @router.message(Survey.budget)
 async def process_budget(message: Message, state: FSMContext):
-    text = message.text.replace(" ", "").replace("грн", "").replace("₴", "")
-    if not text.isdigit():
-        await message.answer("Тільки число в гривнях! Без букв 💸")
-        return
+    await state.update_data(budget=message.text)
     
-    data = await state.get_data()
-    guests = data.get('guests_count', 1)
-    budget = int(text)
-    total = budget * (guests + 1)
+    text = joke_text("""7️⃣ ЧАС І МІСЦЕ 📍
+
+• О котрій хочеш почати святкувати?
+• Де збираємось? (вдома у когось, ресторан, інше)
+• Є побажання по локації?""")
+    await message.answer(text)
+    await state.set_state(Survey.time_place)
+
+@router.message(Survey.time_place)
+async def process_time_place(message: Message, state: FSMContext):
+    await state.update_data(time_and_place=message.text)
     
-    await state.update_data(budget_per_person=budget, total_budget=total)
-    await message.answer(f"💰 Твій загальний бюджет: ~{total} грн\n\n1️⃣9️⃣ О котрій починаємо?", reply_markup=get_time_kb())
-    await state.set_state(Survey.party_time)
+    text = joke_text("""8️⃣ РОЗВАГИ 🎮
 
-@router.message(Survey.party_time)
-async def process_time(message: Message, state: FSMContext):
-    await state.update_data(party_start_time=message.text)
-    await message.answer("2️⃣0️⃣ Де святкуємо?", reply_markup=get_location_kb())
-    await state.set_state(Survey.location)
-
-@router.message(Survey.location)
-async def process_location(message: Message, state: FSMContext):
-    await state.update_data(party_location=message.text)
-    await message.answer("2️⃣1️⃣ Яка музика? (поп, реп, рок, ретро, мікс...)", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(Survey.music)
-
-@router.message(Survey.music)
-async def process_music(message: Message, state: FSMContext):
-    await state.update_data(music_preferences=message.text)
-    joke = random_joke()
-    text = f"2️⃣2️⃣ Які активності?\n(Ігри, караоке, феєрверки, настолки...)\n\n{joke}" if joke else "2️⃣2️⃣ Які активності?\n(Ігри, караоке, феєрверки, настолки...)"
+Чим хочеш займатись на святі?
+• Музика? Яка? (поп, реп, ретро, мікс)
+• Ігри? Настолки? Караоке?
+• Феєрверки, бенгальські вогні?
+• Щось особливе?""")
     await message.answer(text)
     await state.set_state(Survey.activities)
 
 @router.message(Survey.activities)
 async def process_activities(message: Message, state: FSMContext):
     await state.update_data(activities=message.text)
-    await message.answer("2️⃣3️⃣ Є дієтичні обмеження?\n(Вегетаріанець, не їм свинину...)", reply_markup=get_skip_kb())
-    await state.set_state(Survey.dietary)
+    
+    text = """9️⃣ ОБМЕЖЕННЯ ⚠️
 
-@router.message(Survey.dietary)
-async def process_dietary(message: Message, state: FSMContext):
-    dietary = "" if message.text == "⏭ Пропустити" else message.text
-    await state.update_data(dietary_restrictions=dietary)
-    await message.answer("2️⃣4️⃣ Алергії на продукти?", reply_markup=get_skip_kb())
-    await state.set_state(Survey.allergies)
+Є щось важливе?
+• Алергії на продукти?
+• Дієта? (вегетаріанець, не їси свинину, інше)
+• Щось не їси принципово?
 
-@router.message(Survey.allergies)
-async def process_allergies(message: Message, state: FSMContext):
-    allergies = "" if message.text == "⏭ Пропустити" else message.text
-    await state.update_data(allergies=allergies)
-    await message.answer("2️⃣5️⃣ Особливі побажання до свята?", reply_markup=get_skip_kb())
-    await state.set_state(Survey.special_wishes)
+(Якщо нема — напиши 'нема' або натисни пропустити)"""
+    await message.answer(text, reply_markup=skip_kb())
+    await state.set_state(Survey.restrictions)
 
-@router.message(Survey.special_wishes)
-async def process_wishes(message: Message, state: FSMContext):
-    wishes = "" if message.text == "⏭ Пропустити" else message.text
-    await state.update_data(special_wishes=wishes)
-    await message.answer("2️⃣6️⃣ Що ТИ принесеш на свято?\n(Їжу, напої, гроші, себе красивого...)", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(Survey.what_bring)
+@router.message(Survey.restrictions)
+async def process_restrictions(message: Message, state: FSMContext):
+    text = "" if message.text == "⏭ Пропустити" else message.text
+    await state.update_data(restrictions=text)
+    
+    text = joke_text("""🔟 ТВІЙ ВНЕСОК 🎁
 
-@router.message(Survey.what_bring)
-async def process_bring(message: Message, state: FSMContext):
-    await state.update_data(what_will_bring=message.text)
+Що ТИ можеш принести або зробити?
+• Приготувати щось? Що саме?
+• Принести напої?
+• Скинути грошима?
+• Допомогти з організацією?
+• Принести настолки/колонку/щось інше?""")
+    await message.answer(text, reply_markup=remove_kb())
+    await state.set_state(Survey.contribution)
+
+@router.message(Survey.contribution)
+async def process_contribution(message: Message, state: FSMContext):
+    await state.update_data(contribution=message.text)
+    
+    text = """1️⃣1️⃣ ДОДАТКОВО 💭
+
+Є ще щось важливе, що я не спитав?
+Будь-які побажання, ідеї, пропозиції?
+
+(Або натисни пропустити)"""
+    await message.answer(text, reply_markup=skip_kb())
+    await state.set_state(Survey.extra)
+
+@router.message(Survey.extra)
+async def process_extra(message: Message, state: FSMContext):
+    text = "" if message.text == "⏭ Пропустити" else message.text
+    await state.update_data(extra_wishes=text)
     
     data = await state.get_data()
     await save_survey(data)
     await state.clear()
     
-    count = await get_participants_count()
-    joke = random_joke()
+    count = await get_survey_count()
+    kb = admin_kb() if message.from_user.id == ADMIN_ID else remove_kb()
     
-    kb = get_admin_kb() if message.from_user.id == ADMIN_ID else ReplyKeyboardRemove()
+    finish_text = joke_text(f"""✅ Дякую, {data['display_name']}! Все записано!
+
+👥 Пройшли опитування: {count} чол.
+
+Якщо захочеш змінити відповіді — просто напиши /start знову.
+
+🎄 До зустрічі на святі!""")
     
-    text = f"""✅ Готово, {data['display_name']}! Відповіді записані.
-
-👥 Всього пройшли опитування: {count}
-
-{joke}
-
-Дякую! Чекай на результати 🎄"""
-    
-    await message.answer(text, reply_markup=kb)
+    await message.answer(finish_text, reply_markup=kb)
 
 # --- STATS ---
 @router.message(F.text == "📊 Статистика")
@@ -441,93 +361,104 @@ async def cmd_stats(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     
+    logger.info(f"Admin {message.from_user.id} requested stats")
+    
     surveys = await get_all_surveys()
     if not surveys:
-        await message.answer("📭 Поки ніхто не пройшов опитування", reply_markup=get_admin_kb())
+        await message.answer("📭 Поки ніхто не пройшов опитування", reply_markup=admin_kb())
         return
     
-    # Формуємо звіт по кожному учаснику
-    report = f"🎄 СТАТИСТИКА ОПИТУВАННЯ\n� Учасників: {len(surveys)}\n\n"
+    header = f"🎄 НОВОРІЧНЕ ОПИТУВАННЯ\n📊 Відповідей: {len(surveys)}\n"
+    header += "━" * 30 + "\n\n"
     
-    total_budget = 0
-    total_guests = 0
+    reports = [header]
     
     for i, s in enumerate(surveys, 1):
-        budget = s.get('budget_per_person') or 0
-        guests = s.get('guests_count') or 0
-        total_budget += s.get('total_budget') or 0
-        total_guests += guests
-        
-        person_report = f"""━━━━━━━━━━━━━━━━━━
-� {i }. {s.get('display_name', '?')} (@{s.get('telegram_username', '?')})
-� Гостей: {guests}
-💰 Бюджет: {budget} грн/люд ({s.get('total_budget', 0)} грн всього)
+        person = f"""👤 {i}. {s.get('display_name', '?')} (@{s.get('telegram_username', '?')})
+📅 Оновлено: {s.get('updated_at', '?')}
 
-🍾 Напої: {s.get('drink_type', '-')}
-   Алко: {s.get('alcohol_details', '-')}
-   Безалко: {s.get('soft_drinks', '-')}
+👥 Людей: {s.get('people_count', '-')}
 
-🍖 Гаряче: {s.get('main_dish', '-')} ({s.get('main_dish_details', '-')})
+🍾 НАПОЇ:
+{s.get('drinks', '-')}
 
-🥗 Салати: {s.get('salad_1', '-')}, {s.get('salad_2', '-')}
+🍖 ЇЖА (гаряче + салати):
+{s.get('food', '-')}
 
-🍢 Закуски: {s.get('appetizers', '-')}
+🧀 ЗАКУСКИ І НАРІЗКИ:
+{s.get('snacks_and_cuts', '-')}
 
-🧀 Нарізка:
-   Ковбаса: {s.get('sausage_types', 0)} видів ({s.get('sausage_preferences', '-')})
-   Сир: {s.get('cheese_types', 0)} видів ({s.get('cheese_preferences', '-')})
+🍰 ДЕСЕРТ:
+{s.get('dessert', '-')}
 
-🍞 Хліб: {s.get('bread_type', '-')}
-🍊 Фрукти: {s.get('fruits', '-')}
-🍰 Десерт: {s.get('dessert', '-')} ({s.get('dessert_details', '-')})
+💰 БЮДЖЕТ: {s.get('budget', '-')} грн
 
-⏰ Час: {s.get('party_start_time', '-')}
-📍 Місце: {s.get('party_location', '-')}
-🎵 Музика: {s.get('music_preferences', '-')}
-🎮 Активності: {s.get('activities', '-')}
+📍 ЧАС І МІСЦЕ:
+{s.get('time_and_place', '-')}
 
-⚠️ Дієта: {s.get('dietary_restrictions', '-') or 'немає'}
-🚫 Алергії: {s.get('allergies', '-') or 'немає'}
-💭 Побажання: {s.get('special_wishes', '-') or 'немає'}
-🎁 Принесе: {s.get('what_will_bring', '-')}
+🎮 РОЗВАГИ:
+{s.get('activities', '-')}
+
+⚠️ ОБМЕЖЕННЯ:
+{s.get('restrictions', '-') or 'немає'}
+
+🎁 ПРИНЕСЕ/ЗРОБИТЬ:
+{s.get('contribution', '-')}
+
+💭 ДОДАТКОВО:
+{s.get('extra_wishes', '-') or 'немає'}
+
+{"━" * 30}
 
 """
-        report += person_report
+        reports.append(person)
     
-    report += f"""━━━━━━━━━━━━━━━━━━
-📊 ЗАГАЛОМ:
-👥 Людей (з гостями): {total_guests + len(surveys)}
-💰 Загальний бюджет: {total_budget} грн
-
-{random_joke()}
-"""
+    joke = random_joke()
+    if joke:
+        reports.append(f"\n{joke}")
     
-    # Розбиваємо на частини якщо завелике
-    if len(report) > 4000:
-        parts = [report[i:i+4000] for i in range(0, len(report), 4000)]
-        for part in parts:
-            await message.answer(part, reply_markup=get_admin_kb())
-    else:
-        await message.answer(report, reply_markup=get_admin_kb())
+    current_msg = ""
+    for report in reports:
+        if len(current_msg) + len(report) > 4000:
+            await message.answer(current_msg, reply_markup=admin_kb())
+            current_msg = report
+        else:
+            current_msg += report
+    
+    if current_msg:
+        await message.answer(current_msg, reply_markup=admin_kb())
 
 @router.message(Command("reset"))
 async def cmd_reset(message: Message, state: FSMContext):
     await state.clear()
-    kb = get_admin_kb() if message.from_user.id == ADMIN_ID else ReplyKeyboardRemove()
+    kb = admin_kb() if message.from_user.id == ADMIN_ID else remove_kb()
     await message.answer("🔄 Скинуто. /start щоб почати знову", reply_markup=kb)
+
+@router.message(Command("delete_my_data"))
+async def cmd_delete(message: Message, state: FSMContext):
+    await state.clear()
+    await delete_survey(message.from_user.id)
+    kb = admin_kb() if message.from_user.id == ADMIN_ID else remove_kb()
+    await message.answer("🗑 Твої дані видалено з бази", reply_markup=kb)
 
 # --- MAIN ---
 async def main():
+    logger.info(f"Starting bot with token: {BOT_TOKEN[:10]}...")
+    logger.info(f"Admin ID: {ADMIN_ID}")
+    
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
     
     await init_db()
-    logger.info("✅ Bot started")
     
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Bot started polling...")
         await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+        raise
     finally:
         await bot.session.close()
 
@@ -537,4 +468,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Bot stopped")
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
